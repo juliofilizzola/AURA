@@ -1,13 +1,10 @@
 from fastapi import FastAPI
+from src.router import router
+import uvicorn
 
-app = FastAPI()
+app = FastAPI(title="Aura API", description="API for Aura text generation", version="1.0.0")
 
+app.include_router(router)
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-
-@app.get("/hello/{name}")
-async def say_hello(name: str):
-    return {"message": f"Hello {name}"}
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=11434)
