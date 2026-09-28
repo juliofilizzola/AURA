@@ -1,0 +1,12 @@
+﻿### Defina AURA_API_TOKEN no ambiente do cliente HTTP.
+POST http://127.0.0.1:8000/api/chat
+Authorization: Bearer {{$env.AURA_API_TOKEN}}
+Content-Type: application/json
+
+{
+  "msg": "Olá, tudo bem?"
+}
+
+### Liveness
+GET http://127.0.0.1:8000/api/health
+Authorization: Bearer {{$env.AURA_API_TOKEN}}
