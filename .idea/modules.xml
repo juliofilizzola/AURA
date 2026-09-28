@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/Aura.iml" filepath="$PROJECT_DIR$/.idea/Aura.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/aura-local.iml" filepath="$PROJECT_DIR$/.idea/aura-local.iml" />
     </modules>
   </component>
 </project>
