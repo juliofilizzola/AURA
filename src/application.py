@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from src.core.config import Settings
 from src.core.errors import AppError
-from src.api.router import router
+from src.api.routes.chat import router
 from src.middleware.security import LocalSecurityMiddleware
 from src.services.chat import ServiceAura
 
