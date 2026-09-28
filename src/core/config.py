@@ -1,8 +1,10 @@
-"""Explicit configuration; no dotenv auto-loading or remote fallback."""
+"""Explicit configuration; carrega .env se presente, sem sobrescrever variáveis já definidas no ambiente."""
 
 import os
 import re
 from dataclasses import dataclass, field
+
+from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ class Settings:
 
     @classmethod
     def from_env(cls):
+        # override=False garante que variáveis já definidas no sistema têm prioridade.
+        load_dotenv(override=False)
         return cls(
             api_token=os.environ.get("AURA_API_TOKEN", ""),
             model_name=os.environ.get("AURA_MODEL", "llama3"),
