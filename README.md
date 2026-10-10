@@ -68,19 +68,169 @@ opcional e, se enviado, precisa coincidir com `AURA_MODEL`.
 `GET /api/health` exige o mesmo token e confirma apenas que a API está funcionando;
 não confirma que Ollama/modelo estão prontos. A rota provisória `/generate` foi removida.
 
+## Executar com Docker
+
+O `docker-compose.yml` sobe dois containers: **Ollama** (motor de inferência) e
+**Aura** (a API). O Ollama não fica exposto no host — apenas a Aura é acessível em
+`127.0.0.1:8000`.
+
+### Pré-requisito
+
+Copie `.env.example` para `.env` e preencha `AURA_API_TOKEN` com um token de ao
+menos 32 caracteres ASCII:
+
+```powershell
+Copy-Item .env.example .env
+# Edite .env e substitua AURA_API_TOKEN pelo valor gerado abaixo:
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+### Subir os serviços
+
+```powershell
+docker compose up --build -d
+```
+
+### Baixar o modelo (somente na primeira vez)
+
+O volume `ollama_data` persiste os modelos entre reinicializações. O download
+precisa de internet, mas a inferência não.
+
+```powershell
+docker compose exec ollama ollama pull llama3
+```
+
+### Testar via Docker
+
+```powershell
+# Leia o token do .env:
+$token = (Get-Content .env | Select-String "AURA_API_TOKEN").ToString().Split("=",2)[1]
+
+# Rota nativa
+Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/chat' `
+  -Method Post -ContentType 'application/json; charset=utf-8' `
+  -Headers @{ Authorization = "Bearer $token" } `
+  -Body '{"msg":"Olá!"}'
+
+# Rota OpenAI-compatible
+Invoke-RestMethod -Uri 'http://127.0.0.1:8000/v1/chat/completions' `
+  -Method Post -ContentType 'application/json; charset=utf-8' `
+  -Headers @{ Authorization = "Bearer $token" } `
+  -Body '{"model":"llama3","messages":[{"role":"user","content":"Olá!"}]}'
+```
+
+### GPU NVIDIA (opcional)
+
+O `docker-compose.yml` já inclui o bloco `deploy.resources.reservations` para
+GPU. Requer o [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+instalado no host. Remova o bloco `deploy` se não tiver GPU disponível.
+
+### Parar os serviços
+
+```powershell
+docker compose down      # mantém o volume ollama_data (modelos preservados)
+docker compose down -v   # remove também os modelos baixados
+```
+
+
+## Rotas HTTP
+
+### Rota nativa — `/api/chat` (POST)
+
+Schema próprio da Aura, sem dependência de formato de terceiros.
+
+```json
+// Requisição
+{ "msg": "Explique o que é uma IA local.", "model_name": "llama3" }
+
+// Resposta
+{ "result": "Uma IA local é..." }
+```
+
+`model_name` é opcional; se enviado, deve coincidir com `AURA_MODEL`.
+
+### Rota compatível com OpenAI — `/v1/chat/completions` (POST)
+
+Aceita o mesmo formato do endpoint `POST /v1/chat/completions` da OpenAI,
+permitindo que ferramentas de desenvolvimento — como **Continue.dev**,
+**OpenWebUI** e clientes que usam o SDK oficial da OpenAI — apontem para a
+Aura diretamente, sem adaptação.
+
+```json
+// Requisição (formato OpenAI)
+{
+  "model": "llama3",
+  "messages": [
+    { "role": "user", "content": "Explique o que é uma IA local." }
+  ]
+}
+
+// Resposta (formato OpenAI)
+{
+  "id": "chatcmpl-...",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "llama3",
+  "choices": [{
+    "index": 0,
+    "message": { "role": "assistant", "content": "Uma IA local é..." },
+    "finish_reason": "stop"
+  }],
+  "usage": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+}
+```
+
+**Diferenças importantes em relação ao endpoint nativo `/api/chat`:**
+
+| Aspecto | `/api/chat` (nativa) | `/v1/chat/completions` (OpenAI-compat) |
+| --- | --- | --- |
+| Formato de entrada | `{ "msg": "..." }` | `{ "model": "...", "messages": [...] }` |
+| Formato de saída | `{ "result": "..." }` | Objeto `ChatCompletion` completo |
+| Histórico de mensagens | Não aplicável | Aceito no campo `messages`, mas **apenas a última mensagem `user` é enviada ao modelo** — a Aura não mantém contexto entre chamadas |
+| Streaming | Não suportado | `stream: true` é aceito no corpo mas **ignorado** — resposta sempre síncrona |
+| Token de autenticação | Bearer obrigatório | Bearer obrigatório (idêntico) |
+| Segurança / limites | Idênticos | Idênticos |
+
+#### Configurar no Continue.dev (VS Code / JetBrains)
+
+Instale a extensão [Continue](https://continue.dev/) e edite
+`~/.continue/config.json`:
+
+```json
+{
+  "models": [{
+    "title": "Aura (local)",
+    "provider": "openai",
+    "model": "llama3",
+    "apiBase": "http://127.0.0.1:8000",
+    "apiKey": "<AURA_API_TOKEN>"
+  }]
+}
+```
+
+> **Nota:** `apiKey` deve ser o mesmo valor de `AURA_API_TOKEN` usado ao
+> iniciar a Aura. O campo `model` deve coincidir com `AURA_MODEL`.
+
+### Rota de saúde — `GET /api/health`
+
+Confirma apenas que a API está no ar. Requer o mesmo token Bearer. Não verifica
+se Ollama ou o modelo estão prontos.
+
 ## Organização
 
 | Arquivo | Responsabilidade |
 | --- | --- |
 | `main.py` | Inicialização local e limites do servidor |
 | `src/application.py` | Composição, ciclo de vida do cliente HTTP e erros |
-| `src/config.py` | Configuração validada por ambiente |
-| `src/security.py` | Autenticação, origem, host e limite de corpo |
-| `src/router.py` | Contrato HTTP e encaminhamento |
-| `src/schema.py` | Validação de entrada e saída |
-| `src/service.py` | Inferência assíncrona e limites do Ollama |
-| `src/ollama_client.py` | Transporte limitado e verificação de modelo local |
-| `src/erros.py` | Erros públicos sem detalhes internos |
+| `src/core/config.py` | Configuração validada por ambiente |
+| `src/middleware/security.py` | Autenticação, origem, host e limite de corpo |
+| `src/api/routes/chat.py` | Rota nativa `/api/chat` e `/api/health` |
+| `src/api/routes/openai_compat.py` | Rota `/v1/chat/completions` (OpenAI-compat) |
+| `src/schemas/chat.py` | Validação de entrada e saída da rota nativa |
+| `src/schemas/openai_compat.py` | Schemas do formato OpenAI |
+| `src/services/chat.py` | Inferência assíncrona e limites do Ollama |
+| `src/clients/ollama.py` | Transporte limitado e verificação de modelo local |
+| `src/core/errors.py` | Erros públicos sem detalhes internos |
 | `tests/test_api.py` | Testes sem modelo, GPU ou rede |
 
 ## Segurança e privacidade
