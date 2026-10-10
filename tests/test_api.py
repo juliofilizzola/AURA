@@ -131,7 +131,9 @@ class ApiTests(unittest.TestCase):
 
 class ConfigurationTests(unittest.TestCase):
     def test_fail_closed_without_token(self):
-        with patch.dict("os.environ", {}, clear=True), self.assertRaises(ValueError):
+        with patch.dict("os.environ", {}, clear=True), \
+             patch("src.core.config.load_dotenv"), \
+             self.assertRaises(ValueError):
             create_app()
 
     def test_reject_cloud_models_and_bad_tokens(self):

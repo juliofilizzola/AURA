@@ -1,0 +1,97 @@
+# docker-compose.yml — Aura local
+# ---------------------------------------------------------------------------
+# Sobe dois serviços:
+#   ollama  — motor de inferência local (imagem oficial)
+#   aura    — API FastAPI que encaminha pedidos ao Ollama
+#
+# Uso rápido:
+#   1. Copie .env.example para .env e preencha AURA_API_TOKEN.
+#   2. docker compose up --build
+#   3. (primeira vez) docker compose exec ollama ollama pull llama3.2:latest
+#
+# A porta 8000 da Aura é publicada apenas no loopback do host (127.0.0.1:8000)
+# para não expor a API na rede local — mesma política da execução manual.
+#
+# GPU NVIDIA (opcional):
+#   Se tiver nvidia-container-toolkit instalado, descomente o bloco "deploy"
+#   no serviço ollama abaixo para habilitar aceleração por GPU.
+# ---------------------------------------------------------------------------
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Ollama — motor de inferência local
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aura-ollama
+    restart: unless-stopped
+
+    # Variáveis que desativam telemetria e acesso à nuvem.
+    environment:
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_HOST: "0.0.0.0:11434"
+
+    # O Ollama NÃO é publicado no host — apenas a rede interna do compose
+    # tem acesso a ele. A Aura o acessa pelo nome de serviço "ollama".
+    expose:
+      - "11434"
+
+    # Persiste os modelos baixados entre reinicializações.
+    volumes:
+      - ollama_data:/root/.ollama
+
+    # GPU NVIDIA (opcional) — descomente se tiver nvidia-container-toolkit.
+    # Requer: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+    # Healthcheck sem curl (não incluso na imagem ollama/ollama).
+    # Usa wget que está disponível na imagem base.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:11434/ > /dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Aura — API FastAPI
+  # ---------------------------------------------------------------------------
+  aura:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aura-api
+    restart: unless-stopped
+
+    # Variáveis de ambiente — AURA_API_TOKEN e AURA_MODEL vêm do .env.
+    # AURA_HOST=0.0.0.0 permite que o Uvicorn aceite conexões da bridge network;
+    # a porta só é acessível externamente via "ports" abaixo (loopback do host).
+    env_file:
+      - .env
+    environment:
+      AURA_HOST: "0.0.0.0"
+      AURA_PORT: "8000"
+      # Sobrescreve a URL do Ollama para usar o serviço interno do compose.
+      # A aplicação usa 127.0.0.1:11434 fixo no código; essa variável é lida
+      # pelo patch de ambiente no application.py quando presente.
+      OLLAMA_BASE_URL: "http://ollama:11434"
+
+    # Publicado SOMENTE no loopback do host — não acessível na rede local.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+volumes:
+  # Volume nomeado para persistir os modelos do Ollama.
+  ollama_data:
+    driver: local
