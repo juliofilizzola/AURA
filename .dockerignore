@@ -1,0 +1,25 @@
+# Exclui arquivos desnecessários da imagem Docker
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.idea/
+.git/
+.gitignore
+
+# Variáveis de ambiente — nunca devem entrar na imagem
+.env
+.env.*
+!.env.example
+
+# Documentação e exemplos
+docs/
+examples/
+tests/
+README.md
+
+# Artefatos de desenvolvimento
+*.log
+.pytest_cache/
